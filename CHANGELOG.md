@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-07-03
+
 - jrl_release: add `--sign-tag` to sign the tag by @ahoarau
 - jrl_print_banner: update banner for v2.0.0
 - jrl_target_headers: fix relative path when called from subdir
