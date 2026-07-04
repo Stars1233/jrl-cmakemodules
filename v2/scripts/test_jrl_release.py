@@ -463,14 +463,15 @@ def test_cmake_extractor_update_version_simple(sample_cmake_lists):
     assert 'DESCRIPTION "A test project"' in content
 
 
-def test_cmake_extractor_update_version_multiline(tmp_path):
-    """Test CMakeListsVersionExtractor can update version in multiline project()."""
-    content = """cmake_minimum_required(VERSION 3.22)
+@pytest.mark.parametrize("version_format", ["1.0.0", '"1.0.0"'])
+def test_cmake_extractor_update_version_multiline(tmp_path, version_format):
+    """Test CMakeListsVersionExtractor can update version in multiline project() with and without quotes."""
+    content = f"""cmake_minimum_required(VERSION 3.22)
 
 project(
   TestProject
   DESCRIPTION "Test project"
-  VERSION 1.0.0
+  VERSION {version_format}
   LANGUAGES CXX
 )
 """
@@ -483,17 +484,19 @@ project(
     assert extractor.get_version() == "1.2.3"
     content = file_path.read_text(encoding="utf-8")
     assert "VERSION 1.2.3" in content
+    assert '"1.2.3"' not in content
 
 
-def test_cmake_extractor_update_fallback_version(tmp_path):
-    """Test CMakeListsVersionExtractor updates both fallback and project version."""
-    content = """cmake_minimum_required(VERSION 3.22)
+@pytest.mark.parametrize("version_format", ["1.0.0", '"1.0.0"'])
+def test_cmake_extractor_update_fallback_version(tmp_path, version_format):
+    """Test CMakeListsVersionExtractor updates both fallback and project version, ensuring quotes are dropped."""
+    content = f"""cmake_minimum_required(VERSION 3.22)
 
-set(PROJECT_VERSION "1.0.0")
+set(PROJECT_VERSION {version_format})
 
 project(
   TestProject
-  VERSION ${PROJECT_VERSION}
+  VERSION ${{PROJECT_VERSION}}
   LANGUAGES NONE
 )
 """
@@ -503,9 +506,10 @@ project(
     extractor = release.CMakeListsVersionExtractor(file_path)
     extractor.update_version("2.5.0")
 
-    # Check that fallback was updated
+    # Check that fallback was updated and has no quotes
     content = file_path.read_text(encoding="utf-8")
-    assert 'set(PROJECT_VERSION "2.5.0")' in content
+    assert "set(PROJECT_VERSION 2.5.0)" in content
+    assert '"2.5.0"' not in content
 
 
 def test_cmake_extractor_no_version_found(tmp_path):
