@@ -374,6 +374,114 @@ class CMakeListsVersionExtractor(VersionExtractor):
             f.write(content)
 
 
+class DebianChangelogVersionExtractor(VersionExtractor):
+    """Specialized extractor for debian/changelog files.
+
+    Expects standard format: package (version) distribution; urgency=...
+    """
+
+    @property
+    def name(self) -> str:
+        return "debian/changelog"
+
+    def get_version(self) -> str:
+        """Extracts and returns the clean upstream version string (omitting the Debian suffix)."""
+        with open(self.file_path, "r", encoding="utf-8") as f:
+            first_line = f.readline()
+
+        if not first_line:
+            raise VersionNotPresent(f"Changelog file {self.name} is empty")
+
+        match = re.match(r"^[a-zA-Z0-9.+_-]+\s+\(([^)]+)\)", first_line)
+        if match:
+            full_version = match.group(1)
+            # Splits on '-' or '~' to strip the packaging revision (e.g., '1.3.3-1debian1' -> '1.3.3')
+            return re.split(r"[-~]", full_version)[0]
+
+        raise VersionNotPresent(
+            f"Could not parse Debian version from first line of {self.name}"
+        )
+
+    def _get_raw_full_version(self) -> str:
+        """Internal helper to get the un-stripped full version string with its suffix."""
+        with open(self.file_path, "r", encoding="utf-8") as f:
+            first_line = f.readline()
+        match = re.match(r"^[a-zA-Z0-9.+_-]+\s+\(([^)]+)\)", first_line)
+        return match.group(1) if match else ""
+
+    def update_version(self, new_version: str) -> None:
+        # Compare core upstream versions safely to avoid duplicate entries
+        try:
+            if self.get_version() == re.split(r"[-~]", new_version)[0]:
+                return  # Skip adding a duplicate entry
+        except VersionNotPresent:
+            pass
+
+        # Grab the raw full version string to parse its suffix before reading full file
+        try:
+            current_full_version = self._get_raw_full_version()
+        except Exception:
+            current_full_version = ""
+
+        with open(self.file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # Parse the first line to reuse metadata
+        first_line = content.splitlines()[0] if content.strip() else ""
+        match = re.match(
+            r"^([a-zA-Z0-9.+_-]+)\s+\([^)]+\)\s+([^;]+);\s*(urgency=\w+)",
+            first_line,
+        )
+
+        if match:
+            package_name = match.group(1)
+            distribution = match.group(2).strip()
+            urgency = match.group(3)
+        else:
+            package_name = "package"
+            distribution = "unstable"
+            urgency = "urgency=medium"
+
+        # Determine the final version string to write, preserving the suffix
+        new_upstream = re.split(r"[-~]", new_version)[0]
+        if "-" in new_version or "~" in new_version:
+            formatted_version = new_version
+        elif current_full_version and (
+            "-" in current_full_version or "~" in current_full_version
+        ):
+            suffix_match = re.search(r"([-~].*)$", current_full_version)
+            suffix = suffix_match.group(1) if suffix_match else "-1"
+            formatted_version = f"{new_upstream}{suffix}"
+        else:
+            formatted_version = f"{new_upstream}-1"
+
+        # Fetch maintainer details
+        repo_dir = self.file_path.parent
+        name_ok, git_name = run_git_command(["config", "user.name"], cwd=repo_dir)
+        email_ok, git_email = run_git_command(["config", "user.email"], cwd=repo_dir)
+
+        if name_ok and email_ok:
+            maintainer = f"{git_name} <{git_email}>"
+        else:
+            maintainer = "Maintainer <maintainer@example.com>"
+
+        # Format RFC 5322 timestamp
+        now = datetime.datetime.now(datetime.timezone.utc).astimezone()
+        debian_date = now.strftime("%a, %d %b %Y %H:%M:%S %z")
+
+        # Write out using the compliant version with the preserved suffix
+        new_entry = (
+            f"{package_name} ({formatted_version}) {distribution}; {urgency}\n\n"
+            f"  * New release: version {new_upstream}\n\n"
+            f" -- {maintainer}  {debian_date}\n\n"
+        )
+
+        updated_content = new_entry + content
+
+        with open(self.file_path, "w", encoding="utf-8") as f:
+            f.write(updated_content)
+
+
 class ChangelogVersionExtractor(VersionExtractor):
     def __init__(self, file_path: Path, pattern: str = ""):
         super().__init__(file_path)
@@ -1228,6 +1336,7 @@ def main():
         TomlVersionExtractor(root_dir / "pixi.toml", ["workspace", "version"]),
         YamlVersionExtractor(root_dir / "CITATION.cff", ["version"]),
         CMakeListsVersionExtractor(root_dir / "CMakeLists.txt"),
+        DebianChangelogVersionExtractor(root_dir / "debian/changelog"),
     ]
 
     if args.list_files:

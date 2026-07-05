@@ -561,6 +561,108 @@ add_library(mylib src/lib.cpp)
 
 
 # ============================================================================
+# TEST DebianChangelogVersionExtractor
+# ============================================================================
+
+
+# A simple mock function that matches the signature of jrl_release's real run_git_command
+# This is used to monkeypatch the jrl_release module to ensure environment repeatability
+def mock_run_git_command(args, cwd):
+    if "user.name" in args:
+        return True, "Jane Doe"
+    if "user.email" in args:
+        return True, "jane.doe@example.com"
+    return False, ""
+
+
+def test_debian_extractor_get_version_strips_suffix(tmp_path):
+    """Test that get_version successfully extracts only the upstream version part."""
+    content = """my-package (1.3.3-1debian1) unstable; urgency=medium
+
+  * Bug fixes.
+
+ -- Maintainer <maintainer@example.com>  Sat, 04 Jul 2026 12:00:00 +0200
+"""
+    file_path = tmp_path / "changelog"
+    file_path.write_text(content, encoding="utf-8")
+
+    extractor = release.DebianChangelogVersionExtractor(file_path)
+
+    # Should cleanly return just the core upstream version
+    assert extractor.get_version() == "1.3.3"
+
+
+def test_debian_extractor_update_version_preserves_suffix(tmp_path, monkeypatch):
+    """Test updating the version creates a new block while maintaining the exact custom debian suffix."""
+    # Use mock run_git_command to ensure environment repeatability
+    monkeypatch.setattr("jrl_release.run_git_command", mock_run_git_command)
+
+    content = """my-package (1.3.2-1debian1) unstable; urgency=medium
+
+  * Previous release.
+
+ -- Jane Doe <jane.doe@example.com>  Fri, 03 Jul 2026 12:00:00 +0200
+"""
+    file_path = tmp_path / "changelog"
+    file_path.write_text(content, encoding="utf-8")
+
+    extractor = release.DebianChangelogVersionExtractor(file_path)
+    extractor.update_version("1.3.3")
+
+    updated_content = file_path.read_text(encoding="utf-8")
+
+    # Verify the new top entry structure and version serialization
+    assert updated_content.startswith(
+        "my-package (1.3.3-1debian1) unstable; urgency=medium"
+    )
+    assert "Jane Doe <jane.doe@example.com>" in updated_content
+    assert "my-package (1.3.2-1debian1)" in updated_content
+
+
+def test_debian_extractor_update_version_no_duplicate(tmp_path):
+    """Test that update_version exits early if the core upstream version is already current."""
+    content = """my-package (1.3.3-1debian1) unstable; urgency=medium
+
+  * Current release.
+
+ -- Jane Doe <jane.doe@example.com>  Sat, 04 Jul 2026 12:00:00 +0200
+"""
+    file_path = tmp_path / "changelog"
+    file_path.write_text(content, encoding="utf-8")
+
+    extractor = release.DebianChangelogVersionExtractor(file_path)
+    extractor.update_version("1.3.3")
+
+    updated_content = file_path.read_text(encoding="utf-8")
+
+    # Count occurrences; should not append a duplicate block since 1.3.3 is already live
+    assert updated_content.count("my-package") == 1
+
+
+def test_debian_extractor_update_explicit_suffix_provided(tmp_path, monkeypatch):
+    """Test that if a specific suffix is intentionally passed inside new_version, it overrides the old suffix."""
+    # Use mock run_git_command to ensure environment repeatability
+    monkeypatch.setattr("jrl_release.run_git_command", mock_run_git_command)
+
+    content = """my-package (1.3.2-1debian1) unstable; urgency=medium
+
+  * Previous release.
+
+ -- Jane Doe <jane.doe@example.com>  Fri, 03 Jul 2026 12:00:00 +0200
+"""
+    file_path = tmp_path / "changelog"
+    file_path.write_text(content, encoding="utf-8")
+
+    extractor = release.DebianChangelogVersionExtractor(file_path)
+    extractor.update_version("1.4.0-0ubuntu1")
+
+    updated_content = file_path.read_text(encoding="utf-8")
+    assert updated_content.startswith(
+        "my-package (1.4.0-0ubuntu1) unstable; urgency=medium"
+    )
+
+
+# ============================================================================
 # TEST ChangelogVersionExtractor
 # ============================================================================
 
