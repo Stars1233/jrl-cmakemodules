@@ -288,7 +288,7 @@ class CMakeListsVersionExtractor(VersionExtractor):
                                 ver = args[version_idx + 1]
                                 # Check if it's a variable reference
                                 if not ver.startswith("${"):
-                                    project_version = ver
+                                    project_version = ver.strip('"')
                         except ValueError:
                             pass
 
@@ -316,16 +316,16 @@ class CMakeListsVersionExtractor(VersionExtractor):
 
     def _get_version_regex(self, content: str) -> str:
         """Fallback regex-based version extraction."""
-        # First try to find set(PROJECT_VERSION "X.Y.Z")
+        # Finds set(PROJECT_VERSION "X.Y.Z") or set(PROJECT_VERSION X.Y.Z)
         fallback_pattern = re.compile(
-            r'set\s*\(\s*PROJECT_VERSION\s+"([0-9]+\.[0-9]+\.[0-9]+)"',
+            r'set\s*\(\s*PROJECT_VERSION\s+"?([0-9]+\.[0-9]+\.[0-9]+)"?\s*\)',
             re.MULTILINE,
         )
         fallback_match = fallback_pattern.search(content)
 
         # Also check if project() uses a literal version or variable
         project_pattern = re.compile(
-            r"project\s*\([^)]*VERSION\s+([\d.]+|\$\{[^}]+\})", re.MULTILINE
+            r'project\s*\([^)]*VERSION\s+"?([\d.]+|\$\{[^}]+\})"?', re.MULTILINE
         )
         project_match = project_pattern.search(content)
 
@@ -347,20 +347,22 @@ class CMakeListsVersionExtractor(VersionExtractor):
         with open(self.file_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        # Update the fallback version in set(PROJECT_VERSION "...")
+        # 1. Update fallback version: matches set(PROJECT_VERSION 1.2.3) or set(PROJECT_VERSION "1.2.3")
+        #    Always replaces it without quotes: set(PROJECT_VERSION 1.2.3)
         fallback_pattern = re.compile(
-            r'(set\s*\(\s*PROJECT_VERSION\s+)"([0-9]+\.[0-9]+\.[0-9]+)"',
+            r'(set\s*\(\s*PROJECT_VERSION\s+)"?([0-9]+\.[0-9]+\.[0-9]+)"?\s*\)',
             re.MULTILINE,
         )
 
         def repl_fallback(match):
-            return f'{match.group(1)}"{new_version}"'
+            return f"{match.group(1)}{new_version})"
 
         content = fallback_pattern.sub(repl_fallback, content, count=1)
 
-        # Also update literal version in project() if present
+        # 2. Update literal version in project(): matches VERSION 1.2.3 or VERSION "1.2.3"
+        #    Always replaces it without quotes: VERSION 1.2.3
         project_pattern = re.compile(
-            r"(project\s*\([^)]*VERSION\s+)([\d.]+)", re.MULTILINE
+            r'(project\s*\([^)]*VERSION\s+)"?([\d.]+)"?', re.MULTILINE
         )
 
         def repl_project(match):
