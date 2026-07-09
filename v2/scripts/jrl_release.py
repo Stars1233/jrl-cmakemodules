@@ -1066,11 +1066,34 @@ def handle_check_version(checks: List[VersionExtractor], args) -> int:
     if args.short and consensus_version and consensus_version != "MISMATCH":
         print(consensus_version)
 
+    tag_check_failed = False
+    tag_format_is_valid = False
+    if hasattr(args, "check_tag") and args.check_tag:
+        if not args.check_tag.startswith("v"):
+            tag_check_failed = True
+            errors = True
+        else:
+            tag_version = args.check_tag.lstrip("v")
+            if consensus_version and consensus_version != "MISMATCH":
+                if consensus_version != tag_version:
+                    tag_check_failed = True
+                    tag_format_is_valid = True
+                    errors = True
+
     if errors:
         if len(versions_found) > 1:
             console.print(
                 f"\n[{STYLE_ERROR_STRONG}]FAILURE:[/{STYLE_ERROR_STRONG}] Found conflicting versions: {', '.join(sorted(versions_found))}"
             )
+        elif tag_check_failed:
+            if not tag_format_is_valid:
+                console.print(
+                    f"\n[{STYLE_ERROR_STRONG}]FAILURE:[/{STYLE_ERROR_STRONG}] Tag version ({args.check_tag}) format is invalid. It should start with 'v' and be a semantic version."
+                )
+            else:
+                console.print(
+                    f"\n[{STYLE_ERROR_STRONG}]FAILURE:[/{STYLE_ERROR_STRONG}] Tag version ({args.check_tag.lstrip('v')}) does not match consensus version ({consensus_version})."
+                )
         else:
             console.print(
                 f"\n[{STYLE_ERROR_STRONG}]FAILURE:[/{STYLE_ERROR_STRONG}] Errors encountered (parsing errors)."
@@ -1306,6 +1329,12 @@ def main():
         help="Bump the project version.",
     )
 
+    parser.add_argument(
+        "--check-tag",
+        type=str,
+        help="Check that the consensus version matches the given tag (e.g., v2.15.0). Only meaningful with --check-version.",
+    )
+
     args = parser.parse_args()
     root_dir = args.root
 
@@ -1315,6 +1344,9 @@ def main():
         console = Console(file=sys.stderr)
     else:
         console = Console()
+
+    if args.check_tag and not args.check_version:
+        parser.error("--check-tag requires --check-version")
 
     if args.update_version:
         try:
