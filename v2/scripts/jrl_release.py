@@ -253,6 +253,33 @@ class YamlVersionExtractor(VersionExtractor):
             self.yaml.dump(data, f)
 
 
+class ConanfileVersionExtractor(VersionExtractor):
+    def get_version(self) -> str:
+        with open(self.file_path, "r", encoding="utf-8") as f:
+            for line in f:
+                match = re.match(r'\s*version\s*=\s*["\']([^"\']+)["\']', line)
+                if match:
+                    return match.group(1)
+        raise VersionNotPresent(f"Version not found in {self.name}")
+
+    def update_version(self, new_version: str) -> None:
+        pattern = re.compile(r'(\s*version\s*=\s*["\'])([^"\']+)(["\'])')
+        updated = False
+        lines = []
+        with open(self.file_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if pattern.match(line) and not updated:
+                    line = pattern.sub(
+                        lambda m: f"{m.group(1)}{new_version}{m.group(3)}", line
+                    )
+                    updated = True
+                lines.append(line)
+        if not updated:
+            raise VersionNotPresent(f"Version not found in {self.name}")
+        with open(self.file_path, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+
+
 class CMakeListsVersionExtractor(VersionExtractor):
     """Specialized extractor for CMakeLists.txt that uses cmake-parser
     and handles both direct VERSION and variables (e.g., from package.xml)."""
@@ -1337,6 +1364,7 @@ def main():
         YamlVersionExtractor(root_dir / "CITATION.cff", ["version"]),
         CMakeListsVersionExtractor(root_dir / "CMakeLists.txt"),
         DebianChangelogVersionExtractor(root_dir / "debian/changelog"),
+        ConanfileVersionExtractor(root_dir / "conanfile.py"),
     ]
 
     if args.list_files:
