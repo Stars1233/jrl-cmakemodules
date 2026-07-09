@@ -1134,6 +1134,41 @@ def test_cli_check_version_success(project_dir, mocker, capsys):
     assert "SUCCESS" in captured.out or "1.0.0" in captured.out
 
 
+@pytest.mark.parametrize(
+    "tag,expected_code,expected_text",
+    [
+        ("v1.0.0", 0, "SUCCESS"),
+        ("v1.2.0", 1, "FAIL"),
+        ("1.0.0", 1, "FAIL"),
+    ],
+)
+def test_cli_check_version_check_tag(
+    project_dir, mocker, capsys, tag, expected_code, expected_text
+):
+    """Test CLI --check-version --check-tag with various tags."""
+    mocker.patch(
+        "sys.argv",
+        [
+            "jrl_release.py",
+            "--root",
+            str(project_dir),
+            "--check-version",
+            "--check-tag",
+            tag,
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        release.main()
+
+    if expected_code == 0:
+        assert exc_info.value.code == 0
+    else:
+        assert exc_info.value.code != 0
+    captured = capsys.readouterr()
+    assert expected_text in captured.out or tag in captured.out
+
+
 def test_cli_check_version_mismatch(tmp_path, mocker, capsys):
     """Test CLI --check-version with version mismatch."""
     (tmp_path / "package.xml").write_text("<version>1.0.0</version>")
