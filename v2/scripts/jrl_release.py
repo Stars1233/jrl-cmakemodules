@@ -256,28 +256,23 @@ class YamlVersionExtractor(VersionExtractor):
 class ConanfileVersionExtractor(VersionExtractor):
     def get_version(self) -> str:
         with open(self.file_path, "r", encoding="utf-8") as f:
-            for line in f:
-                match = re.match(r'\s*version\s*=\s*["\']([^"\']+)["\']', line)
-                if match:
-                    return match.group(1)
+            content = f.read()
+        match = re.search(r'\s*version\s*=\s*["\']([^"\']+)["\']', content)
+        if match:
+            return match.group(1)
         raise VersionNotPresent(f"Version not found in {self.name}")
 
     def update_version(self, new_version: str) -> None:
         pattern = re.compile(r'(\s*version\s*=\s*["\'])([^"\']+)(["\'])')
-        updated = False
-        lines = []
         with open(self.file_path, "r", encoding="utf-8") as f:
-            for line in f:
-                if pattern.match(line) and not updated:
-                    line = pattern.sub(
-                        lambda m: f"{m.group(1)}{new_version}{m.group(3)}", line
-                    )
-                    updated = True
-                lines.append(line)
-        if not updated:
+            content = f.read()
+        if not pattern.search(content):
             raise VersionNotPresent(f"Version not found in {self.name}")
+        new_content, count = pattern.subn(
+            lambda m: f"{m.group(1)}{new_version}{m.group(3)}", content, count=1
+        )
         with open(self.file_path, "w", encoding="utf-8") as f:
-            f.writelines(lines)
+            f.write(new_content)
 
 
 class CMakeListsVersionExtractor(VersionExtractor):
