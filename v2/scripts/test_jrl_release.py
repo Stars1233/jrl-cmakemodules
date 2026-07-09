@@ -99,6 +99,19 @@ name = "test-workspace"
 
 
 @pytest.fixture
+def sample_conanfile_py(tmp_path):
+    """Create a sample conanfile.py file."""
+    content = """class Pkg:
+    name = "test-pkg"
+    version = "1.2.3"
+    # other content
+"""
+    file_path = tmp_path / "conanfile.py"
+    file_path.write_text(content, encoding="utf-8")
+    return file_path
+
+
+@pytest.fixture
 def sample_citation_cff(tmp_path):
     """Create a sample CITATION.cff file."""
     content = """cff-version: 1.2.0
@@ -385,6 +398,25 @@ def test_yaml_extractor_nested_key(tmp_path):
 
     extractor.update_version("4.0.0")
     assert extractor.get_version() == "4.0.0"
+
+
+# ============================================================================
+# TEST ConanfileVersionExtractor
+# ============================================================================
+def test_conanfile_extractor_get_version(sample_conanfile_py):
+    """Test ConanfileVersionExtractor can read version from conanfile.py."""
+    extractor = release.ConanfileVersionExtractor(sample_conanfile_py)
+    assert extractor.get_version() == "1.2.3"
+
+
+def test_conanfile_extractor_update_version(sample_conanfile_py):
+    """Test ConanfileVersionExtractor can update version."""
+    extractor = release.ConanfileVersionExtractor(sample_conanfile_py)
+    extractor.update_version("4.5.6")
+    assert extractor.get_version() == "4.5.6"
+    # Verify structure is preserved
+    content = sample_conanfile_py.read_text(encoding="utf-8")
+    assert "name = " in content and "class Pkg:" in content
 
 
 # ============================================================================
